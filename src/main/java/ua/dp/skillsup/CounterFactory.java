@@ -6,7 +6,7 @@ package ua.dp.skillsup;
  */
 public class CounterFactory {
 	public enum CounterType {
-		ATOMIC, FAST, MY
+		ATOMIC, FAST, MY, MY_LAZY
 	}
 
 	public static Counter build(CounterType type) {
@@ -14,8 +14,10 @@ public class CounterFactory {
 			case ATOMIC:
 				return new AtomicCounter();
             case FAST:
-                return new FastCounter(256);
+                return new FastCounter(4);
             case MY:
+                return new MyCounter(4);
+			case MY_LAZY:
                 return new MyCounter(4);
 		}
 

@@ -5,12 +5,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class MyCounter implements Counter {
+public class MyLazyCounter implements Counter {
 
 	private volatile AtomicLong[] counters;
 	private AtomicLong size = new AtomicLong(0);
 	private AtomicLong threshold = new AtomicLong(0);
 	private AtomicBoolean expanding = new AtomicBoolean(false);
+	private AtomicBoolean creating = new AtomicBoolean(false);
 
 	private static final int HASH_INCREMENT = 0x61c88647;
 	private static AtomicInteger nextHashCode = new AtomicInteger();
@@ -21,13 +22,10 @@ public class MyCounter implements Counter {
 		}
 	};
 
-	public MyCounter(int capacity) {
+	public MyLazyCounter(int capacity) {
 		int adjustedLength = findNextPositivePowerOfTwo(capacity);
 		counters = new AtomicLong[adjustedLength];
 		setThreshold(adjustedLength);
-		for (int i = 0 ; i < adjustedLength; i++) {
-			counters[i] = new AtomicLong();
-		}
 	}
 
 	@Override
@@ -36,14 +34,20 @@ public class MyCounter implements Counter {
 		int length = temp.length;
 		int index = threadHash.get() & (length - 1);
 		AtomicLong counter = temp[index];
+		while (true) {
+			if (counter == null && !creating.get() && creating.compareAndSet(false, true)) {
+				counter = new AtomicLong();
+				temp[index] = counter;
+				creating.set(false);
+				break;
+			}
+		}
+
 		if (counter.getAndIncrement() == 0) {
 			long currentSize = size.getAndIncrement();
 			if (currentSize >= threshold.get() && !expanding.get() && expanding.compareAndSet(false, true)) {
 				int newLength = 2 * length;
 				AtomicLong[] tempCounters = Arrays.copyOf(counters, newLength);
-				for (int i = length; i < newLength; i++) {
-					tempCounters[i] = new AtomicLong();
-				}
 				setThreshold(newLength);
 				counters = tempCounters;
 				expanding.set(false);
@@ -60,7 +64,9 @@ public class MyCounter implements Counter {
 		long sum = 0;
 		AtomicLong[] temp = counters;
 		for (AtomicLong counter : temp) {
+			if (counter != null) {
 				sum += counter.get();
+			}
 		}
 		return sum;
 	}
