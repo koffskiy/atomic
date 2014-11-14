@@ -33,8 +33,9 @@ public class MyLazyCounter implements Counter {
 		AtomicLong[] temp = counters;
 		int length = temp.length;
 		int index = threadHash.get() & (length - 1);
-		AtomicLong counter = temp[index];
+		AtomicLong counter;
 		while (true) {
+			counter = temp[index];
 			if (counter == null && !creating.get() && creating.compareAndSet(false, true)) {
 				counter = new AtomicLong();
 				temp[index] = counter;

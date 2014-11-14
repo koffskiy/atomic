@@ -6,19 +6,19 @@ package ua.dp.skillsup;
  */
 public class CounterFactory {
 	public enum CounterType {
-		ATOMIC, FAST, MY, MY_LAZY
+		ATOMIC, FAST, MY
 	}
 
 	public static Counter build(CounterType type) {
 		switch (type) {
 			case ATOMIC:
 				return new AtomicCounter();
-            case FAST:
-                return new FastCounter(4);
             case MY:
                 return new MyCounter(4);
-			case MY_LAZY:
-                return new MyCounter(4);
+			/* case MY_LAZY:
+                return new MyLazyCounter(4);*/
+			case FAST:
+				return new FastCounter(4);
 		}
 
 		throw new IllegalArgumentException();
