@@ -1,20 +1,30 @@
 package ua.dp.skillsup;
 
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 public class OReadersWriterSpinLock {
 
     AtomicLong readerCount = new AtomicLong();
-    AtomicLong writerCount = new AtomicLong();
+    AtomicBoolean writer = new AtomicBoolean();
 
-    AtomicReference<Thread> exclusiveThread = new AtomicReference<Thread>();
+    Queue<Thread> threads = new ConcurrentLinkedQueue<Thread>();
 
     public void acquireReadLock() {
-//        Thread currentThread = Thread.currentThread();
-        while (writerCount.get() > 0/* && currentThread != exclusiveThread.get()*/);
+        while (true) {
+            readerCount.incrementAndGet();
+            if (writer.get()) {
+                readerCount.decrementAndGet();
 
-        readerCount.incrementAndGet();
+                threads.offer(Thread.currentThread());
+                LockSupport.park(this);
+                continue;
+            }
+            return;
+        }
     }
 
     public void releaseReadLock() {
@@ -22,17 +32,20 @@ public class OReadersWriterSpinLock {
     }
 
     public void acquireWriteLock() {
-        Thread currentThread = Thread.currentThread();
-        while (writerCount.get() > 0  && currentThread != exclusiveThread.get());
-
-        writerCount.incrementAndGet();
-        exclusiveThread.set(currentThread);
-
-        while (readerCount.get() > 0);
+        while (true) {
+            if (writer.compareAndSet(false, true)) {
+                while (readerCount.get() > 0);
+                return;
+            }
+        }
     }
 
     public void releaseWriteLock() {
-        writerCount.decrementAndGet();
-        exclusiveThread.set(null);
+        writer.set(false);
+        Thread reader;
+        do {
+            reader = threads.poll();
+            LockSupport.unpark(reader);
+        } while (reader != null);
     }
 }

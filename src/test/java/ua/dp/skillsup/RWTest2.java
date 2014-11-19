@@ -7,8 +7,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class RWTest {
+public class RWTest2 {
 
     private final CountDownLatch         latch           = new CountDownLatch(1);
 
@@ -18,7 +20,7 @@ public class RWTest {
     private final AtomicLong             readersCounter  = new AtomicLong();
     private final AtomicLong             writersCounter  = new AtomicLong();
 
-    private final OReadersWriterSpinLock spinLock        = new OReadersWriterSpinLock();
+    private final ReadWriteLock spinLock        = new ReentrantReadWriteLock();
 
     private volatile boolean             stop            = false;
 
@@ -57,7 +59,7 @@ public class RWTest {
 
             try {
                 while (!stop) {
-                    spinLock.acquireReadLock();
+                    spinLock.readLock().lock();
                     try {
                        // spinLock.acquireReadLock();
                         try {
@@ -69,7 +71,7 @@ public class RWTest {
                       //      spinLock.releaseReadLock();
                         }
                     } finally {
-                        spinLock.releaseReadLock();
+                        spinLock.readLock().unlock();
                     }
                 }
             } catch (Exception e) {
@@ -88,7 +90,7 @@ public class RWTest {
 
             try {
                 while (!stop) {
-                    spinLock.acquireWriteLock();
+                    spinLock.writeLock().lock();
                     try {
                    //     spinLock.acquireWriteLock();
                         try {
@@ -118,7 +120,7 @@ public class RWTest {
                        //     spinLock.releaseWriteLock();
                         }
                     } finally {
-                        spinLock.releaseWriteLock();
+                        spinLock.writeLock().unlock();
                     }
 
                     consumeCPU(1000);
