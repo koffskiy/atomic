@@ -16,9 +16,10 @@ public class OReadersWriterSpinLock {
     public void acquireReadLock() {
         while (true) {
             readerCount.incrementAndGet();
-            threads.offer(Thread.currentThread());
             if (writer.get()) {
                 readerCount.decrementAndGet();
+                threads.offer(Thread.currentThread());
+
                 if (writer.get()) {
                     LockSupport.park(this);
                 }
