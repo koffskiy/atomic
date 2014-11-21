@@ -1,6 +1,7 @@
 package ua.dp.skillsup;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 public class OReadersWriterSpinLock {
 
@@ -20,7 +21,12 @@ public class OReadersWriterSpinLock {
             }
 
             readerCount.decrementAndGet();
-            writerLock.tryParkReader();
+
+            CLHQueueLock.Qnode lastTail = writerLock.getTail().get();
+            if (lastTail.locked && lastTail == writerLock.getTail().get()) {
+                lastTail.parkedReaders.offer(Thread.currentThread());
+                LockSupport.park(this);
+            }
         }
     }
 

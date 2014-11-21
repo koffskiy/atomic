@@ -56,14 +56,11 @@ public class CLHQueueLock {
         return tail.get().locked;
     }
 
-    public void tryParkReader() {
-        tail.get().parkedReaders.offer(Thread.currentThread());
-        if (tail.get().locked) {
-            LockSupport.park(this);
-        }
+    public AtomicReference<Qnode> getTail() {
+        return tail;
     }
 
-    static final class Qnode {
+    public static final class Qnode {
         volatile boolean locked = true;
         Queue<Thread> parkedReaders = new ConcurrentLinkedQueue<Thread>();
         Thread parkedWriter;
