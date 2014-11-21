@@ -1,31 +1,26 @@
 package ua.dp.skillsup;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.LockSupport;
 
 public class OReadersWriterSpinLock {
 
-    AtomicLong readerCount = new AtomicLong();
-    AtomicBoolean writer = new AtomicBoolean();
+    //ToDo re-entrancy
 
-    Queue<Thread> threads = new ConcurrentLinkedQueue<Thread>();
+    AtomicLong readerCount = new AtomicLong();
+    //FastCounter readerCount = new FastCounter();
+
+    CLHQueueLock writerLock = new CLHQueueLock();
 
     public void acquireReadLock() {
         while (true) {
             readerCount.incrementAndGet();
-            if (writer.get()) {
-                readerCount.decrementAndGet();
-                threads.offer(Thread.currentThread());
 
-                if (writer.get()) {
-                    LockSupport.park(this);
-                }
-                continue;
+            if (!writerLock.isLocked()) {
+                return;
             }
-            return;
+
+            readerCount.decrementAndGet();
+            writerLock.tryParkReader();
         }
     }
 
@@ -34,20 +29,11 @@ public class OReadersWriterSpinLock {
     }
 
     public void acquireWriteLock() {
-        while (true) {
-            if (writer.compareAndSet(false, true)) {
-                while (readerCount.get() > 0);
-                return;
-            }
-        }
+        writerLock.lock();
+        while (readerCount.get() > 0);
     }
 
     public void releaseWriteLock() {
-        writer.set(false);
-        Thread reader;
-        do {
-            reader = threads.poll();
-            LockSupport.unpark(reader);
-        } while (reader != null);
+        writerLock.unlock();
     }
 }

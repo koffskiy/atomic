@@ -35,35 +35,54 @@ public class FastCounter implements Counter {
 
 	@Override
 	public void inc() {
-		while (true) {
-			AtomicLong[] localCounters = counters;
-			int index = threadLocalHash.get() & (localCounters.length - 1);
-			AtomicLong counter = localCounters[index];
-
-			for (int tryIndex = 0; tryIndex < TRY_COUNT; tryIndex++) {
-				long current = counter.get();
-				long next = current + 1;
-				if (counter.compareAndSet(current, next)) {
-					return;
-				}
-			}
-			if (!isExpanding.get() && isExpanding.compareAndSet(false, true)) {
-				AtomicLong[] newCounters = Arrays.copyOf(localCounters, localCounters.length * 2);
-				for (int newIndex = localCounters.length; newIndex < newCounters.length; newIndex++) {
-					newCounters[newIndex] = new AtomicLong();
-				}
-				counters = newCounters;
-				isExpanding.set(false);
-			}
-		}
-
+		add(1);
 	}
+
+    @Override
+    public void dec() {
+        add(-1);
+    }
+
+    private void add(long inc) {
+        while (true) {
+            AtomicLong[] localCounters = counters;
+            int index = threadLocalHash.get() & (localCounters.length - 1);
+            AtomicLong counter = localCounters[index];
+            if (counter == null) {
+                if(!isExpanding.get() && isExpanding.compareAndSet(false, true) && localCounters == counters) {
+                    counters[index] = new AtomicLong(inc);
+                    return;
+                }
+                continue;
+            }
+
+            for (int tryIndex = 0; tryIndex < TRY_COUNT; tryIndex++) {
+                long current = counter.get();
+                long next = current + inc;
+                if (counter.compareAndSet(current, next)) {
+                    return;
+                }
+            }
+            if (!isExpanding.get() && isExpanding.compareAndSet(false, true)) {
+                if (counters == localCounters) {
+                    AtomicLong[] newCounters = Arrays.copyOf(localCounters, localCounters.length * 2);
+                    for (int newIndex = localCounters.length; newIndex < newCounters.length; newIndex++) {
+                        newCounters[newIndex] = new AtomicLong();
+                    }
+                    counters = newCounters;
+                    isExpanding.lazySet(false);
+                }
+            }
+        }
+    }
 
 	@Override
 	public long get() {
 		long sum = 0;
 		for (AtomicLong counter : counters) {
-			sum += counter.get();
+            if (counter != null) {
+                sum += counter.get();
+            }
 		}
 		return sum;
 	}

@@ -14,7 +14,12 @@ public class AtomicCounter implements Counter {
 		counter.incrementAndGet();
 	}
 
-	@Override
+    @Override
+    public void dec() {
+        counter.decrementAndGet();
+    }
+
+    @Override
 	public long get() {
 		return counter.get();
 	}

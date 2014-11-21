@@ -7,5 +7,7 @@ package ua.dp.skillsup;
 public interface Counter {
 	void inc();
 
-	long get();
+    void dec();
+
+    long get();
 }
