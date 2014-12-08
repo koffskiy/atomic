@@ -1,4 +1,4 @@
-package ua.dp.skillsup;
+package ua.dp.skillsup.counter;
 
 /**
  * @author Andrey Lomakin <a href="mailto:lomakin.andrey@gmail.com">Andrey Lomakin</a>

@@ -2,6 +2,8 @@ package ua.dp.skillsup;
 
 
 import org.openjdk.jmh.annotations.*;
+import ua.dp.skillsup.counter.Counter;
+import ua.dp.skillsup.counter.CounterFactory;
 
 @State(Scope.Group)
 @Fork(1)

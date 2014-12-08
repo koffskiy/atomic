@@ -1,4 +1,4 @@
-package ua.dp.skillsup;
+package ua.dp.skillsup.readlock;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;

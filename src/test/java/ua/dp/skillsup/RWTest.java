@@ -2,6 +2,7 @@ package ua.dp.skillsup;
 
 import org.junit.Assert;
 import org.junit.Test;
+import ua.dp.skillsup.readlock.OReadersWriterSpinLock;
 
 import java.util.ArrayList;
 import java.util.List;
