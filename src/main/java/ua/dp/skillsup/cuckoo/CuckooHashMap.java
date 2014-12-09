@@ -3,18 +3,24 @@ package ua.dp.skillsup.cuckoo;
 import java.util.AbstractMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 
 	public static final int INITIAL_CAPACITY = 16;
-	private EntryCounter[][] entries;
+	private AtomicReferenceArray<EntryCounter>[] entries;
 	private int length;
 
 	public CuckooHashMap() {
-		entries = new EntryCounter[2][INITIAL_CAPACITY];
-		length = INITIAL_CAPACITY;
+        this(INITIAL_CAPACITY);
+	}
+
+    public CuckooHashMap(int capacity) {
+        length = capacity;
+        entries = new AtomicReferenceArray[] {
+                new AtomicReferenceArray<EntryCounter>(length),
+                new AtomicReferenceArray<EntryCounter>(length)
+        };
 	}
 
 	@Override
@@ -62,27 +68,28 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 	}
 
 	public V get(Object key) {
-		int h1 = indexOf(hash1(key.hashCode()));
-		int h2 = indexOf(hash2(key.hashCode()));
+        int h = key.hashCode();
+        int h1 = indexOf(hash1(h));
+		int h2 = indexOf(hash2(h));
 
 		while (true) {
-			EntryCounter<K, V> e1r1 = entries[0][h1];
-			if (e1r1 != null && e1r1.entry.key.equals(key)) {
+			EntryCounter<K, V> e1r1 = entries[0].get(h1);
+			if (e1r1 != null && h == e1r1.entry.hash && e1r1.entry.key.equals(key)) {
 				return e1r1.entry.value;
 			}
 
-			EntryCounter<K, V> e2r1 = entries[1][h2];
-			if (e2r1 != null && e2r1.entry.key.equals(key)) {
+			EntryCounter<K, V> e2r1 = entries[1].get(h2);
+			if (e2r1 != null && h == e2r1.entry.hash && e2r1.entry.key.equals(key)) {
 				return e2r1.entry.value;
 			}
-
-			EntryCounter<K, V> e1r2 = entries[0][h1];
-			if (e1r2 != null && e1r2.entry.key.equals(key)) {
+            //Second try
+			EntryCounter<K, V> e1r2 = entries[0].get(h1);
+			if (e1r2 != null && h == e1r2.entry.hash && e1r2.entry.key.equals(key)) {
 				return e1r2.entry.value;
 			}
 
-			EntryCounter<K, V> e2r2 = entries[1][h2];
-			if (e2r2 != null && e2r2.entry.key.equals(key)) {
+			EntryCounter<K, V> e2r2 = entries[1].get(h2);
+			if (e2r2 != null && h == e2r2.entry.hash && e2r2.entry.key.equals(key)) {
 				return e2r2.entry.value;
 			}
 
@@ -96,33 +103,64 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 		}
 	}
 
-
-
 	public V put(K key, V value) {
+        int h = key.hashCode();
+        int h1 = indexOf(hash1(h));
+        int h2 = indexOf(hash2(h));
+
 		while (true) {
 			FindResult<K, V> findResult = find(key);
-			if (findResult.exists && findResult.first != null) {
-				EntryCounter<K, V> first = findResult.first;
-				first.counter.incrementAndGet();
-
-				return first.entry.get().setValue(value);
-			}
-			if (findResult.exists && findResult.second != null) {
-				EntryCounter<K, V> second = findResult.second;
-				second.counter.incrementAndGet();
-
-				return second.entry.get().setValue(value);
+            if (findResult.exists) {
+                //If find return true, then either first not null or the second
+                //Entry counter is immutable, so we can ignore checking entry is not null
+				return findResult.first != null
+                        ? findResult.first.entry.setValue(value)
+                        : findResult.second.entry.setValue(value);
 			}
 
-			if ()
+            if (findResult.first == null) {
+                EntryCounter<K, V> counter = new EntryCounter<K, V>(new MyEntry<K, V>(key, value, h), 0);
+                if (entries[0].compareAndSet(h1, null, counter)) return null;
+                continue;
+            } else if (findResult.first.entry == null) {
+                EntryCounter<K, V> counter = new EntryCounter<K, V>(new MyEntry<K, V>(key, value, h),
+                        findResult.first.counter);
+                if (entries[0].compareAndSet(h1, findResult.first, counter)) return null;
+                continue;
+            }
 
-			if (relocate(0, h1)) continue;
+            if (findResult.second == null) {
+                EntryCounter<K, V> counter = new EntryCounter<K, V>(new MyEntry<K, V>(key, value, h), 0);
+                if (entries[1].compareAndSet(h2, null, counter)) return null;
+                continue;
+            } else if (findResult.second.entry == null) {
+                EntryCounter<K, V> counter = new EntryCounter<K, V>(new MyEntry<K, V>(key, value, h),
+                        findResult.second.counter);
+                if (entries[1].compareAndSet(h2, findResult.second, counter)) return null;
+                continue;
+            }
+
+			if (relocate(0, h)) continue;
 			throw new IllegalStateException("Rehashing is needed to proceed");
 		}
 	}
 
 	public V remove(Object key) {
-
+        int h = key.hashCode();
+        int h1 = indexOf(hash1(h));
+        int h2 = indexOf(hash2(h));
+        while (true) {
+            FindResult<K, V> findResult = find(key);
+            if (!findResult.exists) return null;
+            if (findResult.first != null) {
+                if (entries[0].compareAndSet(h1, findResult.first, new EntryCounter(null, findResult.first.counter)))
+                    return findResult.first.entry.getValue();
+            } else {
+                if (entries[0].get(h1) != findResult.first) continue;
+                if (entries[1].compareAndSet(h2, findResult.second, new EntryCounter(null, findResult.second.counter)))
+                    return findResult.second.entry.getValue();
+            }
+        }
 	}
 
 	public void clear() {
@@ -141,7 +179,6 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 	}
 
 	private FindResult<K, V> find(Object key) {
-
 		int h = key.hashCode();
 		int h1 = indexOf(hash1(h));
 		int h2 = indexOf(hash2(h));
@@ -150,29 +187,22 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 		while (true) {
 			exists = false;
 			//TODO: CHECK time between getting counter and getting entry
-			EntryCounter<K, V> e1r1 = entries[0][h1];
-			long c1r1 = 0;
-			if (e1r1 != null) {
-				MyEntry<K, V> myEntry = e1r1.entry.get();
-				c1r1 = e1r1.counter.get();
-				if (myEntry.marked) {
+			EntryCounter<K, V> e1r1 = entries[0].get(h1);
+			if (e1r1 != null && e1r1.entry != null) {
+				if (e1r1.entry.marked) {
 					//TODO: insert help_relocate
 					continue;
 				}
-
-				exists = h == myEntry.hash && myEntry.key.equals(key);
+				exists = h == e1r1.entry.hash && e1r1.entry.key.equals(key);
 			}
 
-			EntryCounter<K, V> e2r1 = entries[1][h2];
-			long c2r1 = 0;
-			if (e2r1 != null) {
-				MyEntry<K, V> myEntry = e2r1.entry.get();
-				c2r1 = e2r1.counter.get();
-				if (myEntry.marked) {
+			EntryCounter<K, V> e2r1 = entries[1].get(h2);
+			if (e2r1 != null && e2r1.entry != null) {
+				if (e2r1.entry.marked) {
 					//TODO: insert help_relocate
 					continue;
 				}
-				if (h == myEntry.hash && myEntry.key.equals(key)) {
+				if (h == e2r1.entry.hash && e2r1.entry.key.equals(key)) {
 					if (exists) {
 						//insert remove dublicate
 					} else {
@@ -181,32 +211,24 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 				}
 			}
 
-			if (exists) {
-				return new FindResult<K, V>(true, e1r1, e2r1);
-			}
+			if (exists) return new FindResult<K, V>(true, e1r1, e2r1);
 
-			EntryCounter<K, V> e1r2 = entries[0][h1];
-			long c1r2 = 0;
-			if (e1r2 != null) {
-				MyEntry<K, V> myEntry = e1r2.entry.get();
-				c2r1 = e1r2.counter.get();
-				if (myEntry.marked) {
+			EntryCounter<K, V> e1r2 = entries[0].get(h1);
+			if (e1r2 != null && e1r2.entry != null) {
+				if (e1r2.entry.marked) {
 					//TODO: insert help_relocate
 					continue;
 				}
-				exists = h == myEntry.hash && myEntry.key.equals(key);
+				exists = h == e1r2.entry.hash && e1r2.entry.key.equals(key);
 			}
 
-			EntryCounter<K, V> e2r2 = entries[1][h2];
-			long c2r2 = 0;
-			if (e2r2 != null) {
-				MyEntry<K, V> myEntry = e2r2.entry.get();
-				c2r2 = e2r2.counter.get();
-				if (myEntry.marked) {
+			EntryCounter<K, V> e2r2 = entries[1].get(h2);
+			if (e2r2 != null && e2r2.entry != null) {
+				if (e2r2.entry.marked) {
 					//TODO: insert help_relocate
 					continue;
 				}
-				if (h == myEntry.hash && myEntry.key.equals(key)) {
+				if (h == e2r2.entry.hash && e2r2.entry.key.equals(key)) {
 					if (exists) {
 						//insert remove dublicate
 					} else {
@@ -216,9 +238,7 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 			}
 
 			if (exists) return new FindResult<K, V>(true, e1r2, e2r2);
-
-			if (checkCounters(c1r1, c2r1, c1r2, c2r2)) continue;
-
+			if (checkCounters(e1r1.counter, e2r1.counter, e1r2.counter, e2r2.counter)) continue;
 			return new FindResult<K, V>(false, e1r2, e1r2);
 		}
 	}
@@ -245,26 +265,17 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 				&& (table2round2 - table1round1) > 2;
 	}
 
-	static class EntryCounter<K, V> {
-
-		final AtomicReference<MyEntry<K, V>> entry;
-		final AtomicLong counter = new AtomicLong();
-
-		EntryCounter(MyEntry<K, V> entry) {
-			this.entry = new AtomicReference<MyEntry<K, V>>(entry);
-		}
-	}
-
 	public static class MyEntry<K, V> implements Entry<K, V> {
 		final K key;
 		volatile V value;
+        final int hash;
 
-		boolean marked;
-		int hash;
+        boolean marked;
 
-		public MyEntry(K key, V value) {
+		public MyEntry(K key, V value, int hash) {
 			this.key = key;
 			this.value = value;
+			this.hash = hash;
 		}
 
 		@Override
@@ -308,4 +319,14 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 			return getKey() + "=" + getValue();
 		}
 	}
+
+    private static class EntryCounter<K, V> {
+        final MyEntry<K, V> entry;
+        final long counter;
+
+        EntryCounter(MyEntry<K, V> entry, long counter) {
+            this.entry = entry;
+            this.counter = counter;
+        }
+    }
 }
