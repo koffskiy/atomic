@@ -7,16 +7,16 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 
-	public static final int INITIAL_CAPACITY = 16;
+	private static final int INITIAL_CAPACITY = 16;
 	private AtomicReferenceArray<EntryCounter>[] entries;
-	private int length;
+	private final int length;
 
 	public CuckooHashMap() {
         this(INITIAL_CAPACITY);
 	}
 
     public CuckooHashMap(int capacity) {
-        length = capacity;
+        length = findNextPositivePowerOfTwo(capacity);
         entries = new AtomicReferenceArray[] {
                 new AtomicReferenceArray<EntryCounter>(length),
                 new AtomicReferenceArray<EntryCounter>(length)
@@ -33,27 +33,28 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 	}
 
 	public boolean containsKey(Object key) {
-		int h1 = indexOf(hash1(key.hashCode()));
-		int h2 = indexOf(hash2(key.hashCode()));
+		int h = key.hashCode();
+		int h1 = indexOf(hash1(h));
+		int h2 = indexOf(hash2(h));
 
 		while (true) {
-			EntryCounter<K, V> e1r1 = entries[0][h1];
-			if (e1r1 != null && e1r1.entry.key.equals(key)) {
+			EntryCounter<K, V> e1r1 = entries[0].get(h1);
+			if (e1r1 != null && h == e1r1.entry.hash && e1r1.entry.key.equals(key)) {
 				return true;
 			}
 
-			EntryCounter<K, V> e2r1 = entries[1][h2];
-			if (e2r1 != null && e2r1.entry.key.equals(key)) {
+			EntryCounter<K, V> e2r1 = entries[1].get(h2);
+			if (e2r1 != null && h == e2r1.entry.hash && e2r1.entry.key.equals(key)) {
+				return true;
+			}
+			//Second try
+			EntryCounter<K, V> e1r2 = entries[0].get(h1);
+			if (e1r2 != null && h == e1r2.entry.hash && e1r2.entry.key.equals(key)) {
 				return true;
 			}
 
-			EntryCounter<K, V> e1r2 = entries[0][h1];
-			if (e1r2 != null && e1r2.entry.key.equals(key)) {
-				return true;
-			}
-
-			EntryCounter<K, V> e2r2 = entries[1][h2];
-			if (e2r2 != null && e2r2.entry.key.equals(key)) {
+			EntryCounter<K, V> e2r2 = entries[1].get(h2);
+			if (e2r2 != null && h == e2r2.entry.hash && e2r2.entry.key.equals(key)) {
 				return true;
 			}
 
@@ -238,10 +239,15 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 			}
 
 			if (exists) return new FindResult<K, V>(true, e1r2, e2r2);
-			if (checkCounters(e1r1.counter, e2r1.counter, e1r2.counter, e2r2.counter)) continue;
+			if (checkCounters(
+					e1r1 == null ? 0 : e1r1.counter,
+					e2r1 == null ? 0 : e2r1.counter,
+					e1r2 == null ? 0 : e1r2.counter,
+					e2r2 == null ? 0 : e2r2.counter)) continue;
 			return new FindResult<K, V>(false, e1r2, e1r2);
 		}
 	}
+
 
 	private int hash1(int h) {
 		h ^= (h >>> 20) ^ (h >>> 12);
@@ -329,4 +335,8 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
             this.counter = counter;
         }
     }
+
+	private static int findNextPositivePowerOfTwo(final int value) {
+		return 1 << (32 - Integer.numberOfLeadingZeros(value - 1));
+	}
 }
