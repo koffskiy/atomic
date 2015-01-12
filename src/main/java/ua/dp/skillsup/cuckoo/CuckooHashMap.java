@@ -288,7 +288,7 @@ public class CuckooHashMap<K, V> extends AbstractMap<K, V> {
 						tableIndex ^= 1;
 						break;
 					}
-					helpRelocate(tableIndex, index, false);
+					helpRelocate(tableIndex, index, true);
 				}
 			}
 		}
